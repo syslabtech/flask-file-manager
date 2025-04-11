@@ -9,7 +9,6 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Install system dependencies if needed (e.g., for libraries with C extensions)
-# RUN apt-get update && apt-get install -y --no-install-recommends some-package && rm -rf /var/lib/apt/lists/*
 # (Currently none needed for this specific app)
 
 # Create a non-root user and group for security
