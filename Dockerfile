@@ -1,4 +1,3 @@
-# Stage 1: Use a specific Python version (adjust if needed, e.g., 3.10, 3.12)
 # Fix: Update the base image to resolve the vulnerability
 FROM python:3.14.0a7-slim-bullseye AS base
 
