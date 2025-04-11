@@ -1,4 +1,3 @@
-# Fix: Update the base image to resolve the vulnerability
 FROM python:3.14.0a7-slim-bullseye AS base
 
 # Set environment variables for Python
@@ -12,9 +11,10 @@ WORKDIR /app
 # (Currently none needed for this specific app)
 
 # Create a non-root user and group for security
-# Use high UIDs/GIDs to avoid conflicts with host system users if mounting volumes
-RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 --ingroup appgroup --shell /bin/sh --no-create-home appuser
+# FIX: Use a high UID/GID (e.g., 10001) in the recommended range
+#      and remove --system flag as it's not a low-UID system user.
+RUN addgroup --gid 10001 appgroup && \
+    adduser --uid 10001 --ingroup appgroup --shell /bin/sh --no-create-home appuser
 
 # Copy only requirements first to leverage Docker cache
 COPY requirements.txt .
@@ -27,10 +27,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure the non-root user owns the application files
-# This should happen *after* copying all files
+# This uses the names, so it picks up the new UID/GID automatically
 RUN chown -R appuser:appgroup /app
 
 # Switch to the non-root user
+# This uses the name, so it works with the new UID
 USER appuser
 
 # Expose the port Gunicorn will run on (must match the CMD)
