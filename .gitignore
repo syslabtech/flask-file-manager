@@ -1,0 +1,33 @@
+
+# Python virtual environment
+venv/
+env/
+*.venv/
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets / Local Config
+.env
+*.env
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Build artifacts (if any)
+dist/
+build/
+*.egg-info/
+
+# Docker files themselves if inside context (usually not needed)
+# Dockerfile
+# docker-compose.yml

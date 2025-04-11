@@ -1,0 +1,8 @@
+# Appwrite and Flask Core
+appwrite>=6.1.0
+python-dotenv>=1.1.0
+Flask>=3.1.0
+humanize>=4.12.2
+
+# Production WSGI Server
+gunicorn>=23.0.0
