@@ -90,22 +90,55 @@ def format_file_list(file_list):
 
 @app.route('/')
 def index():
-    """Lists files in the bucket."""
+    """Lists files in the bucket with pagination."""
+    # Get pagination params from query string
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 100:
+            per_page = 10
+    except ValueError:
+        page = 1
+        per_page = 10
     try:
         result = storage.list_files(APPWRITE_BUCKET_ID)
         files = format_file_list(result['files'])
         files.sort(key=lambda x: x.get('$createdAt', ''), reverse=True)
+        total_files = len(files)
+        total_pages = (total_files + per_page - 1) // per_page
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated_files = files[start:end]
     except AppwriteException as e:
         flash(f"Error listing files from Appwrite: {e.message} (Code: {e.code})", 'danger')
-        files = []
-        current_app.logger.error(f"Appwrite error listing files: {e}", exc_info=True) # Log error
+        paginated_files = []
+        total_files = 0
+        total_pages = 1
+        page = 1
+        per_page = 10
+        current_app.logger.error(f"Appwrite error listing files: {e}", exc_info=True)
     except Exception as e:
-        flash(f"An unexpected error occurred while listing files.", 'danger') # Generic message
-        files = []
-        current_app.logger.error(f"Unexpected error listing files: {e}", exc_info=True) # Log error
+        flash(f"An unexpected error occurred while listing files.", 'danger')
+        paginated_files = []
+        total_files = 0
+        total_pages = 1
+        page = 1
+        per_page = 10
+        current_app.logger.error(f"Unexpected error listing files: {e}", exc_info=True)
 
     # Pass MAX_FILE_SIZE_MB to template
-    return render_template('index.html', files=files, bucket_id=APPWRITE_BUCKET_ID, max_size_mb=MAX_FILE_SIZE_MB)
+    return render_template(
+        'index.html',
+        files=paginated_files,
+        bucket_id=APPWRITE_BUCKET_ID,
+        max_size_mb=MAX_FILE_SIZE_MB,
+        page=page,
+        per_page=per_page,
+        total_files=total_files,
+        total_pages=total_pages
+    )
 
 
 # --- NEW: Route to serve favicon.ico ---
