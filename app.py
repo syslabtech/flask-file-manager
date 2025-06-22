@@ -90,8 +90,7 @@ def format_file_list(file_list):
 
 @app.route('/')
 def index():
-    """Lists files in the bucket with backend pagination."""
-    # Get pagination params from query string
+    """Lists files in the bucket with cursor-based pagination (Appwrite best practice)."""
     try:
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
@@ -102,12 +101,26 @@ def index():
     except ValueError:
         page = 1
         per_page = 10
-    offset = (page - 1) * per_page
+
+    files = []
+    total_files = 0
+    total_pages = 1
+    cursor = None
     try:
-        # Use Appwrite's built-in pagination
-        result = storage.list_files(APPWRITE_BUCKET_ID, limit=per_page, offset=offset)
-        files = format_file_list(result['files'])
-        total_files = result.get('total', len(files))  # Appwrite returns 'total' if available
+        # Fetch first page
+        result = storage.list_files(APPWRITE_BUCKET_ID, limit=per_page)
+        files = result['files']
+        total_files = result.get('total', len(files))
+        # If user requests a later page, walk pages using cursor
+        for _ in range(1, page):
+            if files:
+                cursor = files[-1]['$id']
+                result = storage.list_files(APPWRITE_BUCKET_ID, limit=per_page, cursor=cursor, cursorDirection='after')
+                files = result['files']
+            else:
+                files = []
+                break
+        files = format_file_list(files)
         total_pages = (total_files + per_page - 1) // per_page if total_files else 1
     except AppwriteException as e:
         flash(f"Error listing files from Appwrite: {e.message} (Code: {e.code})", 'danger')
