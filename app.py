@@ -90,7 +90,7 @@ def format_file_list(file_list):
 
 @app.route('/')
 def index():
-    """Lists files in the bucket with pagination."""
+    """Lists files in the bucket with backend pagination."""
     # Get pagination params from query string
     try:
         page = int(request.args.get('page', 1))
@@ -102,18 +102,16 @@ def index():
     except ValueError:
         page = 1
         per_page = 10
+    offset = (page - 1) * per_page
     try:
-        result = storage.list_files(APPWRITE_BUCKET_ID)
+        # Use Appwrite's built-in pagination
+        result = storage.list_files(APPWRITE_BUCKET_ID, limit=per_page, offset=offset)
         files = format_file_list(result['files'])
-        files.sort(key=lambda x: x.get('$createdAt', ''), reverse=True)
-        total_files = len(files)
-        total_pages = (total_files + per_page - 1) // per_page
-        start = (page - 1) * per_page
-        end = start + per_page
-        paginated_files = files[start:end]
+        total_files = result.get('total', len(files))  # Appwrite returns 'total' if available
+        total_pages = (total_files + per_page - 1) // per_page if total_files else 1
     except AppwriteException as e:
         flash(f"Error listing files from Appwrite: {e.message} (Code: {e.code})", 'danger')
-        paginated_files = []
+        files = []
         total_files = 0
         total_pages = 1
         page = 1
@@ -121,7 +119,7 @@ def index():
         current_app.logger.error(f"Appwrite error listing files: {e}", exc_info=True)
     except Exception as e:
         flash(f"An unexpected error occurred while listing files.", 'danger')
-        paginated_files = []
+        files = []
         total_files = 0
         total_pages = 1
         page = 1
@@ -131,7 +129,7 @@ def index():
     # Pass MAX_FILE_SIZE_MB to template
     return render_template(
         'index.html',
-        files=paginated_files,
+        files=files,
         bucket_id=APPWRITE_BUCKET_ID,
         max_size_mb=MAX_FILE_SIZE_MB,
         page=page,
