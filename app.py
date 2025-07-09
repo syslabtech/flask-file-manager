@@ -31,11 +31,18 @@ APPWRITE_BUCKET_ID = os.getenv('APPWRITE_BUCKET_ID')
 FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY') # MUST be set in production
 
 # --- NEW: File Size Limit (Allow override via ENV var, default to 50MB) ---
+
+# --- Set Flask max upload size to 20MB (proxy will enforce 5MB) ---
 try:
-    MAX_FILE_SIZE_MB = int(os.getenv('MAX_FILE_SIZE_MB', '50'))
+    MAX_FILE_SIZE_MB = int(os.getenv('MAX_FILE_SIZE_MB', '20'))  # Default to 20MB
 except ValueError:
-    MAX_FILE_SIZE_MB = 50 # Fallback if invalid value provided
+    MAX_FILE_SIZE_MB = 20
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
+# --- IMPORTANT: If using a reverse proxy (Nginx, Traefik, etc.), set its upload limit to 5MB. ---
+# Example for Nginx:
+#   client_max_body_size 5M;
+# This will block uploads larger than 5MB at the proxy before reaching Flask.
 
 # --- Production Readiness Checks ---
 if not all([APPWRITE_PROJECT_ID, APPWRITE_API_KEY, APPWRITE_BUCKET_ID]):
@@ -84,7 +91,66 @@ def format_file_list(file_list):
         formatted_files.append(file)
     return formatted_files
 
-# --- Routes (Index, Upload, Delete, View, Download - remain the same) ---
+# --- Routes (Index, Upload, Delete, View, Download, Chunked Upload) ---
+import tempfile
+import shutil
+# --- Chunked Upload Endpoints ---
+# Chunks are stored in a temp directory, then assembled and uploaded to Appwrite when all chunks are received.
+CHUNK_TEMP_DIR = os.path.join(tempfile.gettempdir(), 'flask_chunk_uploads')
+os.makedirs(CHUNK_TEMP_DIR, exist_ok=True)
+
+@app.route('/upload_chunk', methods=['POST'])
+def upload_chunk():
+    """Receives a file chunk. Expects fields: upload_id, chunk_index, total_chunks, filename, chunk (file)."""
+    upload_id = request.form.get('upload_id')
+    chunk_index = request.form.get('chunk_index')
+    total_chunks = request.form.get('total_chunks')
+    filename = request.form.get('filename')
+    chunk = request.files.get('chunk')
+    if not all([upload_id, chunk_index, total_chunks, filename, chunk]):
+        return {"error": "Missing required fields."}, 400
+    chunk_dir = os.path.join(CHUNK_TEMP_DIR, upload_id)
+    os.makedirs(chunk_dir, exist_ok=True)
+    chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_index}")
+    chunk.save(chunk_path)
+    return {"message": f"Chunk {chunk_index} received."}, 200
+
+@app.route('/finalize_upload', methods=['POST'])
+def finalize_upload():
+    """Assembles chunks and uploads the final file to Appwrite."""
+    upload_id = request.form.get('upload_id')
+    total_chunks = int(request.form.get('total_chunks', 0))
+    filename = request.form.get('filename')
+    if not all([upload_id, total_chunks, filename]):
+        return {"error": "Missing required fields."}, 400
+    chunk_dir = os.path.join(CHUNK_TEMP_DIR, upload_id)
+    if not os.path.isdir(chunk_dir):
+        return {"error": "Upload ID not found."}, 404
+    # Assemble chunks
+    assembled_path = os.path.join(chunk_dir, filename)
+    with open(assembled_path, 'wb') as outfile:
+        for i in range(total_chunks):
+            chunk_path = os.path.join(chunk_dir, f"chunk_{i}")
+            if not os.path.exists(chunk_path):
+                return {"error": f"Missing chunk {i}."}, 400
+            with open(chunk_path, 'rb') as infile:
+                shutil.copyfileobj(infile, outfile)
+    # Upload to Appwrite
+    try:
+        with open(assembled_path, 'rb') as f:
+            input_file = InputFile.from_bytes(f.read(), filename=filename)
+            storage.create_file(
+                bucket_id=APPWRITE_BUCKET_ID,
+                file_id='unique()',
+                file=input_file
+            )
+        # Clean up
+        shutil.rmtree(chunk_dir)
+        return {"message": f"File '{filename}' uploaded successfully!"}, 200
+    except AppwriteException as e:
+        return {"error": f"Appwrite error: {e.message}"}, 500
+    except Exception as e:
+        return {"error": f"Unexpected error: {str(e)}"}, 500
 # Keep all the route definitions (@app.route(...)) exactly as they were in the
 # previous version (Bootstrap UI with 50MB limit checks).
 # Make sure flash messages use appropriate categories ('danger', 'success', 'warning').
